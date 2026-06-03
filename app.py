@@ -101,6 +101,16 @@ def get_menu():
     except Exception as e:
         return jsonify({'message': str(e)}), 500
 
+@app.route('/api/debug/ver_datos')
+def debug_datos():
+    # Obtiene solo el primer plato de la base de datos
+    plato = db.menu.find_one()
+    if plato:
+        # Convertimos el _id a string para que no de error
+        plato['_id'] = str(plato['_id'])
+        return jsonify(plato)
+    return jsonify({"mensaje": "La colección está vacía"})
+
 # ─── API: PEDIDOS DE COCINA ───────────────────────────────────────────────────
 @app.route('/api/cocina/pedidos', methods=['GET'])
 @login_required
