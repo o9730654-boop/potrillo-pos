@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Reporte de Ventas Detallado - El Potrillo</title>
+    <style>
+        body { font-family: sans-serif; background-color: #f4f4f4; margin: 0; padding: 0; }
+        .header { background: #e67e22; color: white; padding: 20px; text-align: center; }
+        .container { max-width: 900px; margin: 30px auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th { background-color: #e67e22; color: white; padding: 12px; text-align: left; }
+        td { padding: 12px; border-bottom: 1px solid #ddd; vertical-align: top; }
+        tr:hover { background-color: #f9f9f9; }
+        .badge { padding: 5px 10px; border-radius: 4px; font-size: 0.85rem; font-weight: bold; }
+        .pago-efectivo { background: #dcfce7; color: #166534; }
+        .pago-tarjeta  { background: #dbeafe; color: #1e40af; }
+        .pago-pendiente { background: #fef9c3; color: #854d0e; }
+        .btn-regresar { display: inline-block; margin-bottom: 20px; color: #e67e22; text-decoration: none; font-weight: bold; }
+        .btn-cobrar { border: none; padding: 6px 10px; cursor: pointer; border-radius: 4px; font-weight: bold; margin-right: 5px; }
+        .btn-efectivo { background: #27ae60; color: white; }
+        .btn-tarjeta  { background: #2980b9; color: white; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1> Consulta de ventas del dia</h1>
+    </div>
+    <div class="container">
+        <a href="/menu" class="btn-regresar">↩ Regresar al Menú</a>
+        <table>
+            <thead>
+                <tr>
+                    <th>Ticket #</th>
+                    <th>Cliente / Hora</th>
+                    <th>Productos</th>
+                    <th>Cant.</th>
+                    <th>Total Venta</th>
+                    <th>Método</th>
+                </tr>
+            </thead>
+            <tbody id="tabla-cuerpo"></tbody>
+        </table>
+    </div>
+
+    <script>
+
+    // ─── CONTROL DE ACCESO POR ROL ───────────────────────────────────────────────
+    (function() {
+        const token = localStorage.getItem('authToken');
+        const rol   = localStorage.getItem('userRol');
+        if (!token || !rol) { window.location.href = '/'; return; }
+        const rolesPermitidos = ["cajero", "admin"];
+        if (!rolesPermitidos.includes(rol)) {
+            const destinos = {
+                'cocinero': '/cocina',
+                'hoster':   '/mesas',
+                'mesero':   '/menu',
+                'cajero':   '/reporte-ventas',
+                'admin':    '/menu'
+            };
+            alert('No tienes permiso para acceder a esta sección.');
+            window.location.href = destinos[rol] || '/';
+        }
+    })();
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    async function cargarVentas() {
+        const token = localStorage.getItem('authToken'); 
+        try {
+            const response = await fetch('/api/reporte/detallado', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (response.status === 401) {
+                alert('Sesión expirada. Inicia sesión de nuevo.');
+                window.location.href = '/';
+                return;
+            }
+
+            const ventas = await response.json();
+            const tabla = document.getElementById('tabla-cuerpo');
+            
+            if (!ventas.length) {
+                tabla.innerHTML = '<tr><td colspan="6" style="text-align:center;">No hay ventas hoy</td></tr>';
+                return;
+            }
+
+            tabla.innerHTML = ventas.map(v => {
+                let botonPago = '';
+                if (v.metodo_pago === 'Pendiente') {
+                    botonPago = `
+                        <button class="btn-cobrar btn-efectivo" onclick="cobrarPorTicket(${v.ticket_id}, 'Efectivo', ${v.gran_total})">💵 Efec.</button>
+                        <button class="btn-cobrar btn-tarjeta"  onclick="cobrarPorTicket(${v.ticket_id}, 'Tarjeta',  ${v.gran_total})">💳 Tarj.</button>
+                    `;
+                } else {
+                    const cls = v.metodo_pago === 'Efectivo' ? 'pago-efectivo' : 'pago-tarjeta';
+                    botonPago = `<span class="badge ${cls}">${v.metodo_pago}</span>`;
+                }
+
+                const hora = (() => {
+                    if (!v.fecha) return '';
+                    // Puede venir como "2026-03-07 14:32:00" o como objeto Date
+                    const f = new Date(v.fecha);
+                    if (!isNaN(f)) {
+                        return f.toLocaleTimeString('es-MX', {hour: '2-digit', minute: '2-digit', hour12: true});
+                    }
+                    // fallback: tomar parte después del espacio
+                    const partes = String(v.fecha).split(' ');
+                    return partes.length > 1 ? partes[1].substring(0,5) : v.fecha;
+                })();
+                return `
+                    <tr>
+                        <td><strong>#${v.ticket_id}</strong></td>
+                        <td><strong>${v.cliente}</strong><br><small>${hora}</small></td>
+                        <td style="font-size:0.9em;">${v.productos}</td>
+                        <td>${v.total_items}</td>
+                        <td><strong>$${parseFloat(v.gran_total).toFixed(2)}</strong></td>
+                        <td>${botonPago}</td>
+                    </tr>
+                `;
+            }).join('');
+        } catch (error) {
+            console.error('Error al cargar ventas:', error);
+        }
+    }
+
+    // Cobra un ticket pasando el total directamente (sin buscar en el DOM)
+    async function cobrarPorTicket(ticketId, metodo, totalVenta) {
+        const token = localStorage.getItem('authToken');
+
+        if (metodo === 'Efectivo') {
+            const pago = prompt(`Total a cobrar: $${parseFloat(totalVenta).toFixed(2)}\n¿Con cuánto paga el cliente?`);
+            if (pago === null) return;
+
+            const montoPagado = parseFloat(pago);
+            if (isNaN(montoPagado) || montoPagado < totalVenta) {
+                alert('Monto insuficiente o inválido.');
+                return;
+            }
+            const cambio = montoPagado - totalVenta;
+            alert(` CAMBIO A ENTREGAR: $${cambio.toFixed(2)}`);
+        }
+
+        try {
+            const response = await fetch(`/api/cobrar/ticket/${ticketId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ metodo_pago: metodo })
+            });
+
+            if (response.ok) {
+                cargarVentas(); // Recarga la tabla
+            } else {
+                const err = await response.json();
+                alert('Error al cobrar: ' + (err.message || err.error));
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('Error de conexión.');
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', cargarVentas);
+    // Auto-refresco cada 15 segundos
+    setInterval(cargarVentas, 15000);
+    </script>
+</body>
+</html>

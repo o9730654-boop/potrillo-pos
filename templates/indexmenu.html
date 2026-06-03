@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Menú - Café / Restaurante</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='12341.css') }}" />
+</head>
+<body>
+<!-- Sistema de notificaciones toast -->
+<div id="toast-container"></div>
+
+<!-- Badge de notificaciones en navbar (se inyecta junto al link Cerrar Sesión) -->
+<style>
+    #toast-container {
+        position: fixed;
+        bottom: 24px;
+        right: 24px;
+        z-index: 9999;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        pointer-events: none;
+    }
+    .toast-notif {
+        background: #16a34a;
+        color: white;
+        padding: 14px 20px;
+        border-radius: 12px;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+        font-family: 'Segoe UI', sans-serif;
+        font-size: 0.95rem;
+        font-weight: 600;
+        min-width: 260px;
+        max-width: 320px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        pointer-events: all;
+        animation: slideIn 0.35s ease;
+        transition: opacity 0.4s ease, transform 0.4s ease;
+    }
+    .toast-notif.saliendo {
+        opacity: 0;
+        transform: translateX(40px);
+    }
+    .toast-icon { font-size: 1.4rem; flex-shrink: 0; }
+    .toast-texto { flex: 1; }
+    .toast-titulo { font-size: 0.8rem; opacity: 0.85; font-weight: 500; margin-bottom: 2px; }
+    .toast-nombre { font-size: 1rem; font-weight: 700; }
+    .toast-cerrar {
+        background: rgba(255,255,255,0.2);
+        border: none;
+        color: white;
+        border-radius: 50%;
+        width: 22px; height: 22px;
+        cursor: pointer;
+        font-size: 0.8rem;
+        flex-shrink: 0;
+        display: flex; align-items: center; justify-content: center;
+    }
+    .toast-cerrar:hover { background: rgba(255,255,255,0.35); }
+    @keyframes slideIn {
+        from { opacity: 0; transform: translateX(40px); }
+        to   { opacity: 1; transform: translateX(0); }
+    }
+    /* Badge de notificaciones */
+    .notif-badge-wrap { position: relative; display: inline-flex; align-items: center; }
+    #notif-badge {
+        display: none;
+        position: absolute;
+        top: -8px; right: -10px;
+        background: #dc2626;
+        color: white;
+        border-radius: 50%;
+        width: 18px; height: 18px;
+        font-size: 0.68rem;
+        font-weight: 700;
+        align-items: center;
+        justify-content: center;
+        line-height: 1;
+    }
+</style>
+
+<header class="site-header">
+    <div class="container header-inner">
+        <h1 class="logo">El Potrillo - Menú</h1>
+        <nav class="main-nav" aria-label="Navegación principal">
+            <a href="#Comida">Comida</a>
+            <a href="#Bebida">Bebidas</a>
+            <a href="#Licuados">Licuados</a>
+            <a href="/reporte-ventas" class="nav-link"> Consulta de ventas</a>
+            <a href="/reporte" class="nav-link"> Corte de Caja</a>
+            <a href="/mesas" class="nav-link"> Mesas</a>
+            <a href="/cocina" class="nav-link"> Pantalla de Cocina</a>
+            <a href="/inventario" class="nav-link"> Inventario</a>
+            <span class="notif-badge-wrap">
+                <a href="#" onclick="logout()"> Cerrar Sesión</a>
+            </span>
+            <span class="notif-badge-wrap" id="notif-wrap" style="margin-left:8px;cursor:pointer" onclick="limpiarBadge()" title="Notificaciones">
+                🔔 <span id="notif-badge"></span>
+            </span>
+        </nav>
+    </div>
+</header>
+
+<main class="container layout">
+    <section id="menu" class="menu-grid" aria-label="Lista de platillos"></section>
+
+    <aside class="cart" aria-label="Carrito de orden">
+    <h3>🛒 Mi Orden</h3>
+    <ul id="cart-items"></ul>
+    <div class="cart-total">
+        <strong>Total:</strong> $<span id="cart-total">0.00</span>
+    </div>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px;">
+        <button type="button" class="btn" style="grid-column: span 2;" onclick="window.enviarACaja()">📝 Enviar a Caja (Cobrar luego)</button>
+    </div>
+    </aside>
+</main>
+
+<footer>
+    <div class="container">
+    <p>© <span id="year"></span> El Potrillo — Menú digital</p>
+    </div>
+</footer>
+
+<script>
+
+    // ─── CONTROL DE ACCESO POR ROL ───────────────────────────────────────────────
+    (function() {
+        const token = localStorage.getItem('authToken');
+        const rol   = localStorage.getItem('userRol');
+        if (!token || !rol) { window.location.href = '/'; return; }
+        // cajero también puede entrar al menú para ver sus links
+        const rolesPermitidos = ["mesero", "admin", "cajero"];
+        if (!rolesPermitidos.includes(rol)) {
+            const destinos = {
+                'cocinero': '/cocina',
+                'hoster':   '/mesas'
+            };
+            alert('No tienes permiso para acceder a esta sección.');
+            window.location.href = destinos[rol] || '/';
+        }
+    })();
+    // ─────────────────────────────────────────────────────────────────────────────
+
+
+    // ─── FILTRO DE NAVBAR SEGÚN ROL ──────────────────────────────────────────────
+    (function filtrarNavbar() {
+        const rol = localStorage.getItem('userRol');
+
+        // Qué links puede ver cada rol (null = ve todo)
+        const navPermitido = {
+            'mesero':   ['#Comida', '#Bebida', '#Licuados'],
+            'cajero':   ['/reporte-ventas', '/reporte', '/inventario'],
+            'cocinero': ['/cocina'],
+            'hoster':   ['/mesas'],
+            'admin':    null
+        };
+
+        const permitidos = navPermitido[rol];
+        if (!permitidos) return; // admin ve todo
+
+        document.querySelectorAll('.main-nav a').forEach(link => {
+            const href    = link.getAttribute('href') || '';
+            const onclick = link.getAttribute('onclick') || '';
+            // Siempre mostrar cerrar sesión
+            if (onclick.includes('logout')) return;
+            // Mostrar solo si el href está en la lista permitida
+            const visible = permitidos.some(p => href.includes(p));
+            if (!visible) link.style.display = 'none';
+        });
+
+        // Si es cajero, ocultar el carrito y mostrar mensaje de bienvenida
+        if (rol === 'cajero') {
+            const layout = document.querySelector('.layout');
+            if (layout) {
+                layout.innerHTML = `
+                    <div style="grid-column:1/-1;text-align:center;padding:80px 20px;color:#64748b;">
+                        <div style="font-size:3.5rem;margin-bottom:16px;">💼</div>
+                        <h2 style="color:#1e293b;margin-bottom:10px;">Panel de Caja</h2>
+                        <p style="font-size:1rem;">Usa el menú de navegación para acceder a:<br><br>
+                            <strong>Consulta de Ventas</strong> · <strong>Corte de Caja</strong> · <strong>Inventario</strong>
+                        </p>
+                    </div>`;
+            }
+        }
+    })();
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    function logout() {
+        localStorage.removeItem('authToken');
+        alert('Sesión cerrada.');
+        window.location.href = '/';
+    }
+
+    async function loadMenu() {
+        try {
+            const response = await fetch('/api/menu');
+            const rawText = await response.text();
+            if (!response.ok) throw new Error('Error HTTP ' + response.status + ': ' + rawText);
+            const data = JSON.parse(rawText);
+            if (data.length === 0) {
+                document.getElementById('menu').innerHTML =
+                    '<p style="color:red;padding:20px">⚠️ La API devolvió 0 productos.</p>';
+                return [];
+            }
+            return data.map(item => {
+                const name  = item.mnu_nombre_plato || item.Mnu_nombre_plato || '';
+                const desc  = item.mnu_descripcion  || item.Mnu_descripcion  || '';
+                const price = parseFloat(item.mnu_precio || item.Mnu_precio  || 0);
+                return { name, desc, price, category: classifyCategory(name) };
+            });
+        } catch (error) {
+            console.error('Error cargando menú:', error);
+            document.getElementById('menu').innerHTML =
+                '<p style="color:red;padding:20px">❌ Error: ' + error.message + '</p>';
+            return [];
+        }
+    }
+
+    function classifyCategory(name) {
+        if (name.includes('Huevo') || name.includes('Tortas') || name.includes('Chilaquiles') || name.includes('Sándwiches')) return 'Comida';
+        if (name.includes('Café') || name.includes('Chocomilk')) return 'Bebida caliente';
+        if (name.includes('Licuado')) return 'Licuados';
+        if (name.includes('Refresco') || name.includes('Jamaica') || name.includes('Limonada')) return 'Bebida';
+        return 'Comida';
+    }
+
+    async function iniciarMenu() {
+        const items = await loadMenu();
+        const grouped = items.reduce((acc, item) => {
+            if (!acc[item.category]) acc[item.category] = [];
+            acc[item.category].push(item);
+            return acc;
+        }, {});
+
+        const menuEl = document.getElementById('menu');
+        const order = ['Comida', 'Bebida caliente', 'Licuados', 'Bebida'];
+        menuEl.innerHTML = '';
+
+        order.forEach(cat => {
+            const list = grouped[cat];
+            if (!list) return;
+            const section = document.createElement('section');
+            section.className = 'category-section';
+            section.id = cat.replace(' ', '');
+            const h = document.createElement('h3');
+            h.className = 'category-title';
+            h.textContent = cat;
+            section.appendChild(h);
+            const grid = document.createElement('div');
+            grid.className = 'cards';
+            list.forEach(item => {
+                const card = document.createElement('article');
+                card.className = 'card';
+                const titleRow = document.createElement('div');
+                titleRow.className = 'card-title-row';
+                const title = document.createElement('h4');
+                title.className = 'card-title';
+                title.textContent = item.name;
+                const price = document.createElement('div');
+                price.className = 'card-price';
+                price.textContent = '$' + item.price.toFixed(2);
+                titleRow.appendChild(title);
+                titleRow.appendChild(price);
+                const desc = document.createElement('p');
+                desc.className = 'card-desc';
+                desc.textContent = item.desc;
+                const actions = document.createElement('div');
+                actions.className = 'card-actions';
+                const addBtn = document.createElement('button');
+                addBtn.className = 'btn';
+                addBtn.textContent = 'Agregar';
+                addBtn.onclick = () => addToCart(item);
+                actions.appendChild(addBtn);
+                card.appendChild(titleRow);
+                card.appendChild(desc);
+                card.appendChild(actions);
+                grid.appendChild(card);
+            });
+            section.appendChild(grid);
+            menuEl.appendChild(section);
+        });
+        document.getElementById('year').textContent = new Date().getFullYear();
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', iniciarMenu);
+    } else {
+        iniciarMenu();
+    }
+
+    let cart = [];
+    function addToCart(item) {
+        const existing = cart.find(i => i.name === item.name);
+        if (existing) { existing.qty++; } else { cart.push({ ...item, qty: 1 }); }
+        renderCart();
+    }
+    function removeFromCart(name) {
+        cart = cart.filter(i => i.name !== name);
+        renderCart();
+    }
+    function renderCart() {
+        const cartList  = document.getElementById('cart-items');
+        const cartTotal = document.getElementById('cart-total');
+        cartList.innerHTML = '';
+        let total = 0;
+        cart.forEach(item => {
+            const li = document.createElement('li');
+            li.innerHTML = `<span>${item.qty} × ${item.name}</span><span>$${(item.price * item.qty).toFixed(2)}</span><button class="btn-remove">✖</button>`;
+            li.querySelector('.btn-remove').onclick = () => removeFromCart(item.name);
+            cartList.appendChild(li);
+            total += item.price * item.qty;
+        });
+        cartTotal.textContent = total.toFixed(2);
+    }
+
+    window.enviarACaja = async function() {
+        if (cart.length === 0) { alert("Tu carrito está vacío."); return; }
+        const cliente = prompt("Nombre del cliente:", "Venta de Mostrador");
+        if (cliente === null || cliente.trim() === "") return;
+        const token = localStorage.getItem('authToken');
+        if (!token) { alert("Error de sesión."); window.location.href = '/'; return; }
+        try {
+            const response = await fetch('/api/checkout', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ cliente, telefono: "", metodo_pago: 'Pendiente', items: cart })
+            });
+            if (response.ok) {
+                alert(`✅ Orden de ${cliente} enviada a Cocina y Caja`);
+                cart = []; renderCart();
+            } else {
+                const err = await response.json();
+                alert('❌ Error: ' + (err.message || 'No se pudo guardar.'));
+            }
+        } catch (error) {
+            alert('Error de conexión con el servidor.');
+        }
+    };
+
+    // ─── SISTEMA DE NOTIFICACIONES TOAST ────────────────────────────────────────
+    let ticketsAvisados = new Set();
+    let contadorNoLeidas = 0;
+
+    async function revisarPedidosListos() {
+        const token = localStorage.getItem('authToken');
+        if (!token) return;
+        try {
+            const response = await fetch('/api/notificaciones/listos', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (!response.ok) return;
+            const listos = await response.json();
+            listos.forEach(pedido => {
+                if (!ticketsAvisados.has(pedido.ticket_id)) {
+                    ticketsAvisados.add(pedido.ticket_id);
+                    mostrarToast(pedido.cliente, pedido.ticket_id);
+                }
+            });
+        } catch (e) { console.error("Error en notificaciones", e); }
+    }
+
+    // Sonido de notificación generado con Web Audio API (sin archivos externos)
+    function tocarSonidoAlerta() {
+        try {
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            const tiempos = [0, 0.15, 0.30];
+            const frecuencias = [880, 1100, 1320];
+            tiempos.forEach((t, i) => {
+                const osc  = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(frecuencias[i], ctx.currentTime + t);
+                gain.gain.setValueAtTime(0.4, ctx.currentTime + t);
+                gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.12);
+                osc.start(ctx.currentTime + t);
+                osc.stop(ctx.currentTime + t + 0.15);
+            });
+        } catch(e) { console.warn('Audio no disponible:', e); }
+    }
+
+    function mostrarToast(nombre, ticketId) {
+        tocarSonidoAlerta();
+        // Incrementar badge
+        contadorNoLeidas++;
+        actualizarBadge();
+
+        const container = document.getElementById('toast-container');
+        const toast = document.createElement('div');
+        toast.className = 'toast-notif';
+        toast.innerHTML = `
+            <div class="toast-icon">✅</div>
+            <div class="toast-texto">
+                <div class="toast-titulo">¡Pedido listo! · #${ticketId}</div>
+                <div class="toast-nombre">${nombre}</div>
+            </div>
+            <button class="toast-cerrar" onclick="cerrarToast(this.parentElement)">✕</button>
+        `;
+        container.appendChild(toast);
+
+        // Desaparecer automáticamente en 5 segundos
+        setTimeout(() => cerrarToast(toast), 5000);
+    }
+
+    function cerrarToast(toast) {
+        if (!toast || !toast.parentElement) return;
+        toast.classList.add('saliendo');
+        setTimeout(() => { if (toast.parentElement) toast.parentElement.removeChild(toast); }, 400);
+    }
+
+    function actualizarBadge() {
+        const badge = document.getElementById('notif-badge');
+        if (!badge) return;
+        if (contadorNoLeidas > 0) {
+            badge.style.display = 'flex';
+            badge.textContent = contadorNoLeidas > 9 ? '9+' : contadorNoLeidas;
+        } else {
+            badge.style.display = 'none';
+        }
+    }
+
+    function limpiarBadge() {
+        contadorNoLeidas = 0;
+        actualizarBadge();
+    }
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    setInterval(revisarPedidosListos, 5000);
+
+</script>
+</body>
+</html>

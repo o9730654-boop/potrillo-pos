@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cocina - El Potrillo</title>
+    <style>
+        :root {
+            --pendiente: #e67e22;
+            --fondo: #f0f2f5;
+            --oscuro: #2c3e50;
+            --verde: #27ae60;
+        }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--fondo); margin: 0; padding: 20px; }
+        
+        .header-container { 
+            display: flex; align-items: center; justify-content: space-between; 
+            border-bottom: 2px solid #bdc3c7; padding-bottom: 10px; margin-bottom: 20px;
+        }
+        h1 { margin: 0; color: var(--oscuro); text-align: center; flex-grow: 1; }
+
+        .btn-back {
+            background-color: var(--oscuro); color: white; text-decoration: none;
+            padding: 10px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; border: none;
+        }
+        
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; }
+        
+        .card-pedido { 
+            background: white; border-radius: 12px; overflow: hidden; 
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1); display: flex; flex-direction: column;
+        }
+        .card-header { 
+            padding: 15px; background: var(--pendiente); color: white; 
+            display: flex; justify-content: space-between; align-items: center; 
+        }
+        .card-body { padding: 20px; flex-grow: 1; }
+        .card-body ul { list-style: none; padding: 0; margin: 0; }
+        .card-body li { 
+            font-size: 1.2em; padding: 8px 0; border-bottom: 1px dashed #eee; 
+            display: flex; justify-content: space-between;
+        }
+        .btn-listo { 
+            width: 100%; border: none; padding: 15px; background: var(--verde); 
+            color: white; font-weight: bold; font-size: 1em; cursor: pointer; transition: 0.3s;
+        }
+        .btn-listo:hover { background: #219150; }
+    </style>
+</head>
+<body>
+
+    <div class="header-container">
+        <button class="btn-back" onclick="window.location.href='/menu'">⬅ Volver</button>
+        <h1> Panel de Cocina</h1>
+        <div style="width: 100px;"></div>
+    </div>
+
+    <div id="pedidos-container" class="grid"></div>
+
+    <script>
+
+    // ─── CONTROL DE ACCESO POR ROL ───────────────────────────────────────────────
+    (function() {
+        const token = localStorage.getItem('authToken');
+        const rol   = localStorage.getItem('userRol');
+        if (!token || !rol) { window.location.href = '/'; return; }
+        const rolesPermitidos = ["cocinero", "admin"];
+        if (!rolesPermitidos.includes(rol)) {
+            const destinos = {
+                'cocinero': '/cocina',
+                'hoster':   '/mesas',
+                'mesero':   '/menu',
+                'cajero':   '/menu',
+                'admin':    '/menu'
+            };
+            alert('No tienes permiso para acceder a esta sección.');
+            window.location.href = destinos[rol] || '/';
+        }
+    })();
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    // Clave correcta: 'authToken' (igual que en indexlogin.html)
+    function getToken() {
+        return localStorage.getItem('authToken');
+    }
+
+    async function fetchWithToken(url, options = {}) {
+        const token = getToken();
+        if (!token) {
+            alert('Error de sesión. Inicia sesión de nuevo.');
+            window.location.href = '/';
+            return null;
+        }
+        const headers = {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+            ...options.headers
+        };
+        const response = await fetch(url, { ...options, headers });
+        if (response.status === 401) {
+            alert('Sesión expirada.');
+            localStorage.removeItem('authToken');
+            window.location.href = '/';
+            return null;
+        }
+        return response;
+    }
+
+    async function fetchPedidos() {
+        try {
+            const response = await fetchWithToken('/api/cocina/pedidos', { method: 'GET' });
+            if (!response || !response.ok) return;
+            const pedidos = await response.json();
+            renderizarPedidos(pedidos);
+        } catch (error) { 
+            console.error("Error cargando cocina:", error);
+        }
+    }
+
+    function renderizarPedidos(pedidos) {
+        const contenedor = document.getElementById('pedidos-container');
+        const grupos = {};
+
+        pedidos.forEach(p => {
+            if (!grupos[p.ticket_id]) grupos[p.ticket_id] = [];
+            grupos[p.ticket_id].push(p);
+        });
+
+        const html = Object.keys(grupos).map(tid => {
+            const items = grupos[tid];
+            const cliente = items[0].cliente;
+            const lista = items.map(i => `<li><strong>${i.cantidad}x</strong> ${i.producto}</li>`).join('');
+
+            return `
+                <div class="card-pedido">
+                    <div class="card-header">
+                        <span> ${cliente}</span>
+                        <span>#${tid}</span>
+                    </div>
+                    <div class="card-body">
+                        <ul>${lista}</ul>
+                    </div>
+                    <button class="btn-listo" onclick="marcarComoListo(${tid})">
+                        ✅ MARCAR COMO LISTO
+                    </button>
+                </div>
+            `;
+        }).join('');
+
+        contenedor.innerHTML = html || '<h2 style="text-align:center; grid-column: 1/-1;">✅ No hay pedidos pendientes</h2>';
+    }
+
+    async function marcarComoListo(ticketId) {
+        try {
+            const response = await fetchWithToken(`/api/cocina/finalizar_ticket/${ticketId}`, {
+                method: 'POST'
+            });
+            if (response && response.ok) {
+                fetchPedidos();
+            } else {
+                const err = await response.json().catch(() => ({}));
+                alert('Error: ' + (err.error || err.message || 'status ' + response.status));
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('Error de conexion: ' + error.message);
+        }
+    }
+
+    // Carga inicial + refresco cada 10 segundos
+    document.addEventListener('DOMContentLoaded', fetchPedidos);
+    setInterval(fetchPedidos, 10000);
+    </script>
+</body>
+</html>

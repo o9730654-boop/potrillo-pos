@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Reporte de Corte - El Potrillo</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='12341.css') }}" />
+    <style>
+        .report-card { max-width: 600px; margin: 80px auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        .info-row { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px dashed #ddd; font-size: 16px; }
+        .info-row span { font-weight: 600; }
+        .total-box { background: #e67e22; color: white; padding: 20px; text-align: center; border-radius: 8px; margin-top: 25px; font-size: 1.4rem; font-weight: bold; }
+        .balance-status { margin-top: 20px; padding: 15px; border-radius: 8px; text-align: center; font-weight: bold; display: none; }
+        .btn { padding: 12px; background-color: #c34a36; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; transition: 0.3s; width: 100%; margin-top: 20px; font-size: 1rem; }
+        .btn:hover { background-color: #a93226; }
+        h2 { text-align: center; color: #e67e22; margin-top: 0; }
+    </style>
+</head>
+<body>
+    <header class="site-header">
+        <div class="container header-inner">
+            <h1 class="logo">El Potrillo - Corte</h1>
+            <nav class="main-nav">
+                <a href="/menu">↩ Regresar al Menú</a>
+            </nav>
+        </div>
+    </header>
+
+    <div class="report-card">
+        <h2> Corte de Caja Diario</h2>
+        <div class="info-row"><span>📅 Fecha del Corte:</span> <span id="fecha-corte">Cargando...</span></div>
+        <div class="info-row"><span>💵 Ventas Efectivo:</span> <span id="ventas-efectivo">$0.00</span></div>
+        <div class="info-row"><span>💳 Ventas Tarjeta:</span>  <span id="ventas-tarjeta">$0.00</span></div>
+        <div class="total-box">Total en Sistema: $<span id="total-general">0.00</span></div>
+
+        <div id="balance-result" class="balance-status"></div>
+
+        <button class="btn" onclick="verificarCaja()">🔍 Verificar Caja Física</button>
+    </div>
+
+    <script>
+
+    // ─── CONTROL DE ACCESO POR ROL ───────────────────────────────────────────────
+    (function() {
+        const token = localStorage.getItem('authToken');
+        const rol   = localStorage.getItem('userRol');
+        if (!token || !rol) { window.location.href = '/'; return; }
+        const rolesPermitidos = ["cajero", "admin"];
+        if (!rolesPermitidos.includes(rol)) {
+            const destinos = {
+                'cocinero': '/cocina',
+                'hoster':   '/mesas',
+                'mesero':   '/menu',
+                'cajero':   '/reporte-ventas',
+                'admin':    '/menu'
+            };
+            alert('No tienes permiso para acceder a esta sección.');
+            window.location.href = destinos[rol] || '/';
+        }
+    })();
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    async function cargarReporte() {
+        const token = localStorage.getItem('authToken');
+        try {
+            const response = await fetch('/api/reporte/corte', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (response.status === 401) {
+                alert('Sesión expirada. Inicia sesión de nuevo.');
+                window.location.href = '/';
+                return;
+            }
+
+            const data = await response.json();
+
+            if (response.ok) {
+                document.getElementById('fecha-corte').textContent     = data.fecha_corte;
+                document.getElementById('ventas-efectivo').textContent = `$${data.ventas_efectivo.toFixed(2)}`;
+                document.getElementById('ventas-tarjeta').textContent  = `$${data.ventas_tarjeta.toFixed(2)}`;
+                document.getElementById('total-general').textContent   = data.total_general.toFixed(2);
+            } else {
+                console.error('Error del servidor:', data);
+            }
+        } catch (error) {
+            console.error('Error al cargar reporte:', error);
+        }
+    }
+
+    function verificarCaja() {
+        const ventasEfectivo = parseFloat(document.getElementById('ventas-efectivo').textContent.replace('$', '')) || 0;
+        const ventasTarjeta  = parseFloat(document.getElementById('ventas-tarjeta').textContent.replace('$', ''))  || 0;
+        const totalEsperado  = ventasEfectivo + ventasTarjeta;
+
+        const fisico = prompt(`Ingrese el TOTAL real (Efectivo + Vouchers de Tarjeta):\nTotal esperado en sistema: $${totalEsperado.toFixed(2)}`);
+        if (fisico === null || fisico === '') return;
+
+        const cantFisica = parseFloat(fisico);
+        if (isNaN(cantFisica)) {
+            alert('Por favor, ingrese un número válido.');
+            return;
+        }
+
+        const diferencia = cantFisica - totalEsperado;
+        const resDiv = document.getElementById('balance-result');
+        resDiv.style.display = 'block';
+
+        if (Math.abs(diferencia) < 0.01) {
+            resDiv.innerHTML = `✅ Caja Cuadrada Perfectamente<br><small>Esperado: $${totalEsperado.toFixed(2)}</small>`;
+            resDiv.style.backgroundColor = '#dcfce7';
+            resDiv.style.color = '#166534';
+        } else if (diferencia > 0) {
+            resDiv.innerHTML = `💰 Sobrante: $${diferencia.toFixed(2)}`;
+            resDiv.style.backgroundColor = '#dcfce7';
+            resDiv.style.color = '#166534';
+        } else {
+            resDiv.innerHTML = `⚠️ Faltante: $${Math.abs(diferencia).toFixed(2)}`;
+            resDiv.style.backgroundColor = '#fee2e2';
+            resDiv.style.color = '#991b1b';
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', cargarReporte);
+    </script>
+</body>
+</html>
