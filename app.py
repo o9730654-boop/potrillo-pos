@@ -7,7 +7,7 @@ import datetime
 import os
 from functools import wraps
 
-app = Flask(__name__, template_folder='../templates', static_folder='../static')
+app = Flask(__name__, template_folder='templates', static_folder='static')
 CORS(app)
 
 SECRET_KEY = os.environ.get('SECRET_KEY', 'tu_super_clave_secreta_12345')
