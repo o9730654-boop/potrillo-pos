@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 import os
 from pymongo import MongoClient
@@ -6,34 +6,53 @@ from pymongo import MongoClient
 app = Flask(__name__)
 CORS(app)
 
-# Conexión a MongoDB (Usa la variable de entorno que configuraste en Vercel)
+# Conexión MongoDB
 MONGO_URI = os.environ.get('MONGO_URI')
 client = MongoClient(MONGO_URI)
-db = client['el_potrillo_db']  # Nombre de tu base de datos
+db = client['el_potrillo_db'] 
 
-# --- RUTAS DE MENÚ ---
+# --- SECCIÓN 1: VISTAS (Frontend - Lo que ve el usuario) ---
+# Aquí es donde Flask busca tus archivos HTML en la carpeta 'templates'
+
+@app.route('/')
+def index():
+    return render_template('indexlogin.html')
+
+@app.route('/menu')
+def pagina_menu():
+    return render_template('menu.html') # Asegúrate de que este archivo exista en /templates
+
+@app.route('/ventas')
+def pagina_ventas():
+    return render_template('ventas.html') # Asegúrate de que este archivo exista en /templates
+
+@app.route('/clientes')
+def pagina_clientes():
+    return render_template('clientes.html') # Asegúrate de que este archivo exista en /templates
+
+
+# --- SECCIÓN 2: API (Backend - Lo que usa tu código JS para guardar datos) ---
+
+# API Menú
 @app.route('/api/menu', methods=['GET'])
 def get_menu():
     try:
-        # Buscamos en la colección 'menu'
-        # {'_id': 0} es vital para que no falle el JSON que espera el frontend
-        menu = list(db.menu.find({}, {'_id': 0}))
-        return jsonify(menu), 200
+        items = list(db.menu.find({}, {'_id': 0}))
+        return jsonify(items), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-# --- RUTAS DE VENTAS ---
+# API Ventas
 @app.route('/api/ventas', methods=['POST'])
 def guardar_venta():
     try:
         data = request.json
-        # Guardamos el documento tal cual llega del frontend
         db.ventas.insert_one(data)
-        return jsonify({'status': 'Venta registrada con éxito'}), 201
+        return jsonify({'status': 'Venta registrada'}), 201
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-# --- RUTAS DE CLIENTES ---
+# API Clientes
 @app.route('/api/clientes', methods=['GET'])
 def get_clientes():
     try:
