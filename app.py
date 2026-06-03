@@ -86,17 +86,20 @@ def login():
     return jsonify({'message': 'Credenciales incorrectas'}), 401
 
 # ─── API: MENÚ ────────────────────────────────────────────────────────────────
+# ─── API: MENÚ (CORREGIDA) ──────────────────────────────────────────────────
 @app.route('/api/menu', methods=['GET'])
 def get_menu():
     try:
         rows = list(db.menu.find())
         result = []
         for r in rows:
+            # Usamos los nombres exactos encontrados en tu base de datos (minúsculas)
             result.append({
-    "id_plato": r.get("id_plato", str(r.get("_id"))),
-    "Mnu_nombre_plato": r.get("Mnu_nombre_plato", r.get("nombre")),
-"Mnu_precio": float(r.get("Mnu_precio", r.get("precio", 0)))
-})
+                "id_plato": r.get("id_plato", str(r.get("_id"))),
+                "Mnu_nombre_plato": r.get("mnu_nombre_plato", "Sin nombre"),
+                "Mnu_descripcion": r.get("mnu_descripcion", ""),
+                "Mnu_precio": float(r.get("mnu_precio", 0))
+            })
         return jsonify(result), 200
     except Exception as e:
         return jsonify({'message': str(e)}), 500
