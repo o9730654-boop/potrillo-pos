@@ -95,7 +95,7 @@ def get_menu():
             result.append({
     "id_plato": r.get("id_plato", str(r.get("_id"))),
     "Mnu_nombre_plato": r.get("Mnu_nombre_plato", r.get("nombre")),
-    # ...
+"Mnu_precio": float(r.get("Mnu_precio", r.get("precio", 0)))
 })
         return jsonify(result), 200
     except Exception as e:
