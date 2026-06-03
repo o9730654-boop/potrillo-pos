@@ -93,11 +93,10 @@ def get_menu():
         result = []
         for r in rows:
             result.append({
-                "id_plato": r.get("id_plato", str(r.get("_id"))),
-                "Mnu_nombre_plato": r.get("Mnu_nombre_plato", r.get("nombre")),
-                "Mnu_descripcion": r.get("Mnu_descripcion", r.get("descripcion", "")),
-                "Mnu_precio": float(r.get("Mnu_precio", r.get("precio", 0)))
-            })
+    "id_plato": r.get("id_plato", str(r.get("_id"))),
+    "Mnu_nombre_plato": r.get("Mnu_nombre_plato", r.get("nombre")),
+    # ...
+})
         return jsonify(result), 200
     except Exception as e:
         return jsonify({'message': str(e)}), 500
