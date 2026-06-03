@@ -47,7 +47,7 @@ def mesas_page():
 
 @app.route('/reporte')
 def reporte_page():
-    return render_template('reporte.html.html')
+    return render_template('reporte.html')
 
 @app.route('/cocina')
 def view_cocina():
